@@ -45,6 +45,9 @@ class SST_Install {
 		'6.0.6' => array(
 			'sst_update_606_fix_duplicate_transactions',
 		),
+		'6.2.0' => array(
+			'sst_update_620_import_origin_addresses',
+		),
 	);
 
 	/**
@@ -77,10 +80,16 @@ class SST_Install {
 
 	/**
 	 * Initialize the background updater.
+	 *
+	 * @return SST_Updater
 	 */
 	public static function init_background_updater() {
-		include_once 'class-sst-updater.php';
-		self::$background_updater = new SST_Updater();
+		if ( ! isset( self::$background_updater ) ) {
+			require_once 'class-sst-updater.php';
+			self::$background_updater = new SST_Updater();
+		}
+
+		return self::$background_updater;
 	}
 
 	/**

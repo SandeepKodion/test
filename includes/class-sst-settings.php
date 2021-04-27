@@ -32,11 +32,11 @@ class SST_Settings {
 	private static $settings = array();
 
 	/**
-	 * Initialize the settings array.
+	 * Load the plugin settings from the options table.
 	 *
-	 * @since 5.0
+	 * @since 6.3.3
 	 */
-	private static function init_settings() {
+	public static function load_settings() {
 		self::$settings = get_option( self::$options_key, array() );
 	}
 
@@ -46,7 +46,7 @@ class SST_Settings {
 	 * @since 5.0
 	 */
 	public static function get_form_fields() {
-		return array(
+		$fields = array(
 			'taxcloud_settings'           => array(
 				'title'       => __( 'TaxCloud Settings', 'simple-sales-tax' ),
 				'type'        => 'title',
@@ -86,17 +86,23 @@ class SST_Settings {
 				'desc_tip'    => true,
 				'id'          => 'verifySettings',
 			),
-			'business_addresses_settings' => array(
-				'title'       => __( 'Business Addresses', 'simple-sales-tax' ),
+			'address_settings'            => array(
+				'title'       => __( 'Address Settings', 'simple-sales-tax' ),
 				'type'        => 'title',
 				'description' => __(
-					'You must enter at least one business address for Simple Sales Tax to work properly. <strong>Important:</strong> Any addresses you enter here should also be registered as <a href="https://simplesalestax.com/taxcloud/locations/" target="_blank">locations</a> in TaxCloud.',
+					'To accurately determine the sales tax for an order, Simple Sales Tax needs to know the locations you ship your products from.<br>You can select from the addresses entered on the <a href="https://taxcloud.com/go/locations/" target="_blank">Locations</a> page in TaxCloud.',
 					'simple-sales-tax'
 				),
 			),
-			'addresses'                   => array(
-				'type'    => 'address_table',
-				'default' => array(),
+			'default_origin_addresses'      => array(
+				'title'       => __( 'Shipping Origin Addresses', 'simple-sales-tax' ),
+				'type'        => 'origin_address_select',
+				'description' => __(
+					'Select the addresses you ship your products from. You can choose a different set of origin addresses for a specific product under the Shipping tab on the Edit Product screen.',
+					'simple-sales-tax'
+				),
+				'desc_tip'    => true,
+				'default'     => array(),
 			),
 			'exemption_settings'          => array(
 				'title'       => __( 'Exemption Settings', 'simple-sales-tax' ),
@@ -240,6 +246,8 @@ class SST_Settings {
 				'desc_tip'    => true,
 			),
 		);
+
+		return apply_filters( 'sst_settings_form_fields', $fields );
 	}
 
 	/**
@@ -254,7 +262,7 @@ class SST_Settings {
 	 */
 	public static function get( $key, $empty_value = null ) {
 		if ( empty( self::$settings ) ) {
-			self::init_settings();
+			self::load_settings();
 		}
 
 		// Get option default if unset.
@@ -279,10 +287,7 @@ class SST_Settings {
 	 * @param mixed  $value Option value.
 	 */
 	public static function set( $key, $value ) {
-		if ( empty( self::$settings ) ) {
-			self::init_settings();
-		}
-
+		self::load_settings();
 		self::$settings[ $key ] = $value;
 
 		update_option( self::$options_key, self::$settings );

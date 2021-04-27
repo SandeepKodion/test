@@ -49,8 +49,8 @@ class SST_Admin {
 	 * @since 5.0
 	 */
 	public function includes() {
-		include_once dirname( __DIR__ ) . '/sst-message-functions.php';
-		include_once __DIR__ . '/class-sst-integration.php';
+		require_once dirname( __DIR__ ) . '/sst-message-functions.php';
+		require_once __DIR__ . '/class-sst-integration.php';
 	}
 
 	/**
@@ -72,12 +72,15 @@ class SST_Admin {
 	 * @since 4.2
 	 */
 	public static function enqueue_scripts_and_styles() {
-		// Admin JS.
-		wp_enqueue_script( 'sst-admin-js' );
+		global $pagenow, $post;
 
-		// Admin CSS.
+		// Global admin CSS.
 		wp_enqueue_style( 'sst-admin-css' );
-		wp_enqueue_style( 'sst-certificate-modal-css' );
+
+		// Edit Order screen CSS.
+		if ( 'post.php' === $pagenow && 'shop_order' === get_post_type( $post ) ) {
+			wp_enqueue_style( 'sst-certificate-modal-css' );
+		}
 	}
 
 	/**
@@ -104,34 +107,7 @@ class SST_Admin {
 	 * @since 4.2
 	 */
 	public static function output_tax_metabox( $post ) {
-		$order           = new SST_Order( $post->ID );
-		$status          = $order->get_taxcloud_status( 'view' );
-		$raw_certificate = $order->get_certificate();
-		$certificate     = '';
-
-		if ( ! is_null( $raw_certificate ) ) {
-			$certificate = SST_Certificates::get_certificate_formatted(
-				$raw_certificate->getCertificateID(),
-				$order->get_user_id()
-			);
-		}
-
-		wp_enqueue_script( 'sst-view-certificate' );
-		wp_localize_script(
-			'sst-view-certificate',
-			'SSTCertData',
-			array(
-				'certificate' => $certificate,
-				'seller_name' => SST_Settings::get( 'company_name' ),
-				'images'      => array(
-					'single_cert'  => SST()->url( 'assets/img/sp_exemption_certificate750x600.png' ),
-					'blanket_cert' => SST()->url( 'assets/img/exemption_certificate750x600.png' ),
-				),
-			)
-		);
-
-		include __DIR__ . '/views/html-meta-box.php';
-		include dirname( __DIR__ ) . '/frontend/views/html-view-certificate.php';
+		do_action( 'sst_output_tax_meta_box', $post );
 	}
 
 	/**
@@ -142,7 +118,7 @@ class SST_Admin {
 	public static function output_tax_report_button() {
 		?>
 		<div id="poststuff" class="wootax-reports-page">
-			<a target="_blank" href="https://simplesalestax.com/taxcloud/reports/"
+			<a target="_blank" href="https://taxcloud.com/go/tax-reporting/"
 			   class="wp-core-ui button button-primary">
 				<?php esc_html_e( 'Go to TaxCloud Reports Page', 'simple-sales-tax' ); ?>
 			</a>
@@ -232,27 +208,39 @@ class SST_Admin {
 	 * @since 5.0
 	 */
 	public static function output_category_tic_select( $term_or_taxonomy = null ) {
-		$is_edit     = is_a( $term_or_taxonomy, 'WP_Term' );
-		$current_tic = '';
+		$wrapper_el       = 'div';
+		$label_el         = 'label';
+		$field_wrapper_el = 'div';
+		$value            = '';
+		$is_edit          = is_a( $term_or_taxonomy, 'WP_Term' );
 
 		if ( $is_edit ) {
-			$current_tic = get_term_meta( $term_or_taxonomy->term_id, 'tic', true );
+			$wrapper_el       = 'tr';
+			$label_el         = 'th';
+			$field_wrapper_el = 'td';
+			$value            = get_term_meta( $term_or_taxonomy->term_id, 'tic', true );
 		}
 
-		wp_localize_script(
-			'sst-tic-select',
-			'ticSelectLocalizeScript',
-			array(
-				'tic_list' => sst_get_tics(),
-				'strings'  => array(
-					'default' => __( 'Using site default', 'simple-sales-tax' ),
-				),
+		printf( '<%s class="form-field">', $wrapper_el );
+		printf(
+			'<%1$s>%2$s</%1$s>',
+			$label_el,
+			esc_html__( 'Taxability Information Code', 'simple-sales-tax' )
+		);
+		printf( '<%s class="sst-tic-select-wrap">', $field_wrapper_el );
+
+		sst_output_tic_select_field( compact( 'value' ) );
+
+		printf(
+			'<p class="description">%s</p>',
+			esc_html__(
+				'This TIC will be used as the default for all products in this category.',
+				'simple-sales-tax'
 			)
 		);
 
-		wp_enqueue_script( 'sst-tic-select' );
-
-		include __DIR__ . '/views/html-select-tic-category.php';
+		printf( '</%s>', $field_wrapper_el );
+		printf( '</%s>', $wrapper_el );
 	}
 
 	/**

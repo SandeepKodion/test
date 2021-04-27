@@ -20,7 +20,7 @@ class SST_Origin_Address extends Address {
 	/**
 	 * Address ID.
 	 *
-	 * @var int
+	 * @var string
 	 */
 	protected $ID;
 
@@ -34,7 +34,7 @@ class SST_Origin_Address extends Address {
 	/**
 	 * Constructor.
 	 *
-	 * @param int    $ID       Address ID.
+	 * @param string $ID       Address ID.
 	 * @param bool   $Default  Whether this is a default address.
 	 * @param string $Address1 Street address 1.
 	 * @param string $Address2 Street address 2.
@@ -55,7 +55,7 @@ class SST_Origin_Address extends Address {
 	/**
 	 * Set ID.
 	 *
-	 * @param int $ID Address ID.
+	 * @param string $ID Address ID.
 	 *
 	 * @since 5.0
 	 */
@@ -66,7 +66,7 @@ class SST_Origin_Address extends Address {
 	/**
 	 * Get ID.
 	 *
-	 * @return int
+	 * @return string
 	 * @since 5.0
 	 */
 	public function getID() {
@@ -92,6 +92,24 @@ class SST_Origin_Address extends Address {
 	 */
 	public function getDefault() {
 		return $this->Default;
+	}
+
+	/**
+	 * Set Zip5.
+	 *
+	 * @param string $Zip5 5 digit ZIP code.
+	 */
+	public function setZip5( $Zip5 ) {
+		$this->Zip5 = substr( $Zip5, 0, 5 );
+	}
+
+	/**
+	 * Set Zip4.
+	 *
+	 * @param string $Zip4 4 digit component of ZIP code.
+	 */
+	public function setZip4( $Zip4 ) {
+		$this->Zip4 = substr( $Zip4, 0, 4 );
 	}
 
 }

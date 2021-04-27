@@ -35,7 +35,6 @@ class SST_Checkout extends SST_Abstract_Cart {
 	 * @since 5.0
 	 */
 	public function __construct() {
-		add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_styles' ) );
 		add_filter( 'woocommerce_calculated_total', array( $this, 'calculate_tax_totals' ), 1100, 2 );
 		add_filter( 'woocommerce_cart_hide_zero_taxes', array( $this, 'hide_zero_taxes' ) );
 		add_action( 'woocommerce_checkout_update_order_meta', array( $this, 'add_order_meta' ) );
@@ -46,7 +45,7 @@ class SST_Checkout extends SST_Abstract_Cart {
 		if ( sst_storefront_active() ) {
 			add_action( 'woocommerce_checkout_shipping', array( $this, 'output_exemption_form' ), 15 );
 		} else {
-			add_action( 'woocommerce_checkout_order_review', array( $this, 'output_exemption_form' ) );
+			add_action( 'woocommerce_checkout_after_customer_details', array( $this, 'output_exemption_form' ) );
 		}
 
 		add_action( 'woocommerce_checkout_create_order_shipping_item', array( $this, 'add_shipping_meta' ), 10, 3 );
@@ -182,7 +181,6 @@ class SST_Checkout extends SST_Abstract_Cart {
 	 * @since 5.5
 	 */
 	protected function get_base_packages() {
-		/* Start with the packages returned by Woo */
 		$packages = WC()->shipping->get_packages();
 
 		/*
@@ -191,38 +189,9 @@ class SST_Checkout extends SST_Abstract_Cart {
 		 * create a special package for them.
 		 */
 		$virtual_package = $this->create_virtual_package();
+
 		if ( $virtual_package ) {
 			$packages[] = $virtual_package;
-		}
-
-		/*
-		 * Set the shipping method for each package, replacing the destination
-		 * address with a local pickup address if appropriate.
-		 */
-		foreach ( $packages as $key => $package ) {
-			$method = $this->get_package_shipping_rate( $key, $package );
-
-			if ( is_null( $method ) ) {
-				continue;
-			}
-
-			$method     = clone $method;    /* IMPORTANT: preserve original */
-			$method->id = $key;
-
-			$packages[ $key ]['shipping'] = $method;
-
-			if ( SST_Shipping::is_local_pickup( array( $method->method_id ) ) ) {
-				$pickup_address = apply_filters( 'wootax_pickup_address', SST_Addresses::get_default_address(), null );
-
-				$packages[ $key ]['destination'] = array(
-					'country'   => 'US',
-					'address'   => $pickup_address->getAddress1(),
-					'address_2' => $pickup_address->getAddress2(),
-					'city'      => $pickup_address->getCity(),
-					'state'     => $pickup_address->getState(),
-					'postcode'  => $pickup_address->getZip5(),
-				);
-			}
 		}
 
 		return $packages;
@@ -267,19 +236,50 @@ class SST_Checkout extends SST_Abstract_Cart {
 	protected function create_packages() {
 		$packages = array();
 
-		/* Let devs change the packages before we split them. */
+		// Let devs change the packages before we split them.
 		$raw_packages = apply_filters(
 			'wootax_cart_packages_before_split',
-			$this->get_filtered_packages(),
+			$this->get_base_packages(),
 			$this->cart
 		);
 
-		/* Split packages by origin address. */
+		// Set shipping method for each package and change destination address
+		// if method is Local Pickup.
+		foreach ( $raw_packages as $key => $package ) {
+			$method = $this->get_package_shipping_rate( $key, $package );
+
+			if ( is_null( $method ) ) {
+				continue;
+			}
+
+			$method     = clone $method;    /* IMPORTANT: preserve original */
+			$method->id = $key;
+
+			$raw_packages[ $key ]['shipping'] = $method;
+
+			if ( SST_Shipping::is_local_pickup( array( $method->method_id ) ) ) {
+				$pickup_address = apply_filters( 'wootax_pickup_address', SST_Addresses::get_default_address(), null );
+
+				$raw_packages[ $key ]['destination'] = array(
+					'country'   => 'US',
+					'address'   => $pickup_address->getAddress1(),
+					'address_2' => $pickup_address->getAddress2(),
+					'city'      => $pickup_address->getCity(),
+					'state'     => $pickup_address->getState(),
+					'postcode'  => $pickup_address->getZip5(),
+				);
+			}
+		}
+
+		// Filter out packages with invalid destinations.
+		$raw_packages = array_filter( $raw_packages, array( $this, 'is_package_destination_valid' ) );
+
+		// Split packages by origin address.
 		foreach ( $raw_packages as $raw_package ) {
 			$packages = array_merge( $packages, $this->split_package( $raw_package ) );
 		}
 
-		/* Add fees to first package. */
+		// Add fees to first package.
 		if ( ! empty( $packages ) && apply_filters( 'wootax_add_fees', true ) ) {
 			$packages[ key( $packages ) ]['fees'] = $this->cart->get_fees();
 		}
@@ -525,16 +525,6 @@ class SST_Checkout extends SST_Abstract_Cart {
 	}
 
 	/**
-	 * Enqueues the CSS for the exemption management interface.
-	 *
-	 * @since 5.0
-	 */
-	public function enqueue_styles() {
-		wp_enqueue_style( 'sst-modal-css' );
-		wp_enqueue_style( 'sst-certificate-modal-css' );
-	}
-
-	/**
 	 * Does the customer have an exempt user role?
 	 *
 	 * @return bool
@@ -571,6 +561,8 @@ class SST_Checkout extends SST_Abstract_Cart {
 		}
 
 		wp_enqueue_script( 'sst-checkout' );
+		wp_enqueue_style( 'sst-modal-css' );
+		wp_enqueue_style( 'sst-certificate-modal-css' );
 
 		// phpcs:disable
 		$checked = (

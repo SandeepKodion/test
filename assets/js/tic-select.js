@@ -1,5 +1,5 @@
-/* global jQuery, SST, ticSelectLocalizeScript */
-(function($, SST, data) {
+/* global jQuery, ticSelectLocalizeScript */
+(function($, data) {
     $(function() {
         var $row_template = wp.template( 'sst-tic-row' ),
             SelectView    = Backbone.View.extend( {
@@ -7,9 +7,13 @@
                 input: null,
                 readout: null,
                 initialize: function() {
-                    this.input   = this.$el.siblings( '.sst-tic-input' );
-                    this.readout = this.$el.siblings( '.sst-selected-tic' );
-                    this.$el.click( { view: this }, this.openModal );
+                    this.input             = this.$el.siblings( '.sst-tic-input' );
+                    this.readout           = this.$el.siblings( '.sst-selected-tic' );
+                    this.handleInputChange = this.handleInputChange.bind( this );
+
+                    // todo: refactor so we can use backbone.view.events.
+                    this.$el.on( 'click', { view: this }, this.openModal );
+                    this.input.on( 'change', this.handleInputChange );
                 },
                 render: function() {
                     this.selectTIC( this.input.val() );
@@ -60,13 +64,21 @@
                     }
                 },
                 selectTIC: function( tic_id ) {
+                    this.input.val( tic_id ).trigger( 'change' );
+                },
+                handleInputChange: function() {
+                    var tic_id = this.input.val();
+
                     if ( '' == tic_id ) {
-                        this.readout.text( data.strings.default );
+                        this.readout.text( this.readout.data( 'default' ) );
                     } else {
                         var tic = data.tic_list[ parseInt( tic_id ) ];
                         this.readout.text( tic['description'] + ' (' + tic['id'] + ')' );
-                        this.input.val( tic_id ).trigger( 'change' );
                     }
+                },
+                remove: function() {
+                    Backbone.View.prototype.remove.call(this);
+                    this.input.off( 'change' );
                 },
             } );
 
@@ -84,6 +96,6 @@
 
         initialize();
 
-        $( '#woocommerce-product-data' ).on( 'woocommerce_variations_loaded', initialize );
+        $( document.body ).on( data.tic_select_init_events, initialize );
     });
-})(jQuery, SST, ticSelectLocalizeScript);
+})(jQuery, ticSelectLocalizeScript);

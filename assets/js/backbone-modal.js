@@ -80,9 +80,9 @@
             _.bindAll( this, 'render' );
             this.render();
 
-            $( window ).resize(function() {
+            $( window ).on( 'resize', function() {
                 view.resizeContent();
-            });
+            } );
         },
         render: function() {
             var template = wp.template( this._target );
@@ -97,7 +97,6 @@
 
             this.resizeContent();
             // this.$el.focus(); NOTE: Origin of aforementioned issue
-            $( document.body ).trigger( 'init_tooltips' );
 
             $( document.body ).trigger( 'wc_backbone_modal_loaded', this._target );
         },

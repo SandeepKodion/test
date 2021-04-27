@@ -21,6 +21,10 @@ class SST_Product {
 	 * @since 5.0
 	 */
 	public static function init() {
+		if ( ! is_admin() ) {
+			return;
+		}
+
 		add_action( 'woocommerce_product_options_shipping', array( __CLASS__, 'output_origin_select_box' ) );
 		add_action( 'woocommerce_product_bulk_edit_start', array( __CLASS__, 'output_bulk_edit_fields' ) );
 		add_action( 'woocommerce_product_bulk_edit_save', array( __CLASS__, 'save_bulk_edit_fields' ) );
@@ -104,11 +108,11 @@ class SST_Product {
 		$addresses = SST_Addresses::get_origin_addresses();
 
 		// Do not display if there is less than 2 origin addresses to select from.
-		if ( ! is_array( $addresses ) || count( $addresses ) < 2 ) {
-			return;
-		}
+		$show_dropdown = is_array( $addresses ) && count( $addresses ) >= 2;
 
-		include __DIR__ . '/admin/views/html-origin-select.php';
+		if ( apply_filters( 'sst_show_origin_address_dropdown', $show_dropdown ) ) {
+			include __DIR__ . '/admin/views/html-origin-select.php';
+		}
 	}
 
 	/**
@@ -117,20 +121,18 @@ class SST_Product {
 	 * @since 5.0
 	 */
 	public static function output_bulk_edit_fields() {
-		wp_localize_script(
-			'sst-tic-select',
-			'ticSelectLocalizeScript',
-			array(
-				'tic_list' => sst_get_tics(),
-				'strings'  => array(
-					'default' => __( 'No Change', 'simple-sales-tax' ),
-				),
-			)
+		$field_args = array(
+			'default_text' => __( 'No Change', 'simple-sales-tax' ),
 		);
 
-		wp_enqueue_script( 'sst-tic-select' );
-
-		require_once __DIR__ . '/admin/views/html-select-tic-bulk.php';
+		?>
+		<label class="alignleft">
+			<span class="title"><?php esc_html_e( 'TIC', 'simple-sales-tax' ); ?></span>
+			<span class="input-text-wrap">
+				<?php sst_output_tic_select_field( $field_args ); ?>
+			</span>
+		</label>
+		<?php
 	}
 
 	/**
@@ -169,29 +171,23 @@ class SST_Product {
 
 		if ( $is_variation ) {
 			$product_id = $variation->ID;
+			$class      = 'form-row form-field form-row-full';
 		} else {
 			$product_id = $post->ID;
+			$class      = 'form-field';
 		}
 
-		$current_tic = get_post_meta( $product_id, 'wootax_tic', true );
-
-		wp_localize_script(
-			'sst-tic-select',
-			'ticSelectLocalizeScript',
-			array(
-				'tic_list' => sst_get_tics(),
-				'strings'  => array(
-					'default' => $is_variation ? __( 'Same as parent', 'simple-sales-tax' ) : __(
-						'Using site default',
-						'simple-sales-tax'
-					),
-				),
-			)
-		);
-
-		wp_enqueue_script( 'sst-tic-select' );
-
-		require __DIR__ . '/admin/views/html-select-tic.php';
+		?>
+		<p class="<?php echo esc_attr( $class ); ?> wootax_tic">
+			<label for="wootax_tic[<?php echo esc_attr( $product_id ); ?>]">
+				<?php esc_html_e( 'TIC', 'simple-sales-tax' ); ?>
+			</label>
+			<?php if ( $is_variation ): ?>
+				<br>
+			<?php endif; ?>
+			<?php sst_output_tic_select_field( compact( 'product_id' ) ); ?>
+		</p>
+		<?php
 	}
 
 	/**
@@ -237,7 +233,7 @@ class SST_Product {
 		$origins = array();
 
 		if ( isset( $_REQUEST['_wootax_origin_addresses'] ) ) { // phpcs:ignore WordPress.CSRF.NonceVerification
-			$origins = array_map( 'absint', $_REQUEST['_wootax_origin_addresses'] ); // phpcs:ignore WordPress.CSRF.NonceVerification
+			$origins = array_map( 'sanitize_title', wp_unslash( $_REQUEST['_wootax_origin_addresses'] ) ); // phpcs:ignore WordPress.CSRF.NonceVerification
 		}
 
 		update_post_meta( $product_id, '_wootax_origin_addresses', $origins );

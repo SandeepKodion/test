@@ -209,6 +209,88 @@ function sst_get_tics() {
 }
 
 /**
+ * Outputs the TIC select field.
+ *
+ * @param array $args Optional field args.
+ */
+function sst_output_tic_select_field( $args = array() ) {
+	$defaults = array(
+		'field_name'   => 'wootax_tic',
+		'default_text' => __( 'Using site default', 'simple-sales-tax' ),
+		'value'        => '',
+		'button_class' => 'button',
+		'field_class'  => '',
+	);
+
+	if ( isset( $args['product_id'] ) ) {
+		$product_id = $args['product_id'];
+
+		$defaults['field_name'] = sprintf( 'wootax_tic[%d]', $product_id );
+		$defaults['value']      = get_post_meta( $product_id, 'wootax_tic', true );
+
+		if ( 'product_variation' === get_post_type( $product_id ) ) {
+			$defaults['default_text'] = __( 'Same as parent', 'simple-sales-tax' );
+		}
+	}
+
+	$args = wp_parse_args( $args, $defaults );
+
+	$script_data = array(
+		'tic_list'               => sst_get_tics(),
+		'tic_select_init_events' => sst_get_tic_select_init_events(),
+	);
+	wp_localize_script( 'sst-tic-select', 'ticSelectLocalizeScript', $script_data );
+	wp_enqueue_script( 'sst-tic-select' );
+
+	wp_enqueue_style( 'sst-tic-select-css' );
+
+	?>
+	<span class="sst-selected-tic" data-default="<?php echo esc_attr( $args['default_text'] ); ?>">
+		<?php echo esc_html( $args['default_text'] ); ?>
+	</span>
+	<input type="hidden" name="<?php echo esc_attr( $args['field_name'] ); ?>"
+	       class="sst-tic-input <?php echo esc_attr( $args['field_class'] ); ?>"
+		   value="<?php echo esc_attr( $args['value'] ); ?>">
+	<button type="button" class="<?php echo esc_attr( $args['button_class'] ); ?> sst-select-tic">
+		<?php esc_html_e( 'Select', 'simple-sales-tax' ); ?>
+	</button>
+	<?php
+
+	add_action( 'admin_footer', 'sst_print_tic_select_modal_template' );
+	add_action( 'wp_footer', 'sst_print_tic_select_modal_template' );
+}
+
+/**
+ * Prints the Underscores template for the TIC select modal.
+ */
+function sst_print_tic_select_modal_template() {
+	require_once __DIR__ . '/views/html-select-tic-modal.php';
+}
+
+/**
+ * Gets a list of JavaScript events that trigger initialization of TIC selects.
+ *
+ * @return string Space separated list of JS events to trigger TIC select init.
+ */
+function sst_get_tic_select_init_events() {
+	return apply_filters( 'wootax_tic_select_init_events', 'woocommerce_variations_loaded' );
+}
+
+/**
+ * Gets the help text / description to use for the TIC select field.
+ *
+ * @return string
+ */
+function sst_get_tic_select_help_text() {
+	$default_help_text = __(
+		'The TIC is used to determine the appropriate sales tax rate for your product. If your product is exempt from sales tax or qualifies for reduced tax rates, please make sure you select an appropriate TIC.',
+		'simple-sales-tax'
+	);
+
+	return apply_filters( 'wootax_tic_select_help_text', $default_help_text );
+}
+
+/**
  * Calculates the taxes for an order using the TaxCloud API.
  *
  * @param WC_Order|int $order Order object or order ID.
@@ -265,3 +347,67 @@ function sst_format_order_items( $items ) {
 
 	return $new_items;
 }
+
+/**
+ * Gets the shipping address for an order.
+ *
+ * @param int|WC_Order $order Order ID or order object.
+ *
+ * @return array
+ */
+function sst_get_order_shipping_address( $order ) {
+	if ( ! is_object( $order ) ) {
+		$order = wc_get_order( $order );
+	}
+
+	if ( ! $order ) {
+		return array();
+	}
+
+	return array(
+		'country'   => $order->get_shipping_country(),
+		'address'   => $order->get_shipping_address_1(),
+		'address_2' => $order->get_shipping_address_2(),
+		'city'      => $order->get_shipping_city(),
+		'state'     => $order->get_shipping_state(),
+		'postcode'  => $order->get_shipping_postcode(),
+	);
+}
+
+/**
+ * Renders the Sales Tax meta box.
+ *
+ * @param WP_Post $post The post being edited.
+ */
+function sst_render_tax_meta_box( $post ) {
+	$order           = new SST_Order( $post->ID );
+	$status          = $order->get_taxcloud_status( 'view' );
+	$raw_certificate = $order->get_certificate();
+	$certificate     = '';
+
+	if ( ! is_null( $raw_certificate ) ) {
+		$certificate = SST_Certificates::get_certificate_formatted(
+			$raw_certificate->getCertificateID(),
+			$order->get_user_id()
+		);
+	}
+
+	wp_enqueue_script( 'sst-view-certificate' );
+	wp_localize_script(
+		'sst-view-certificate',
+		'SSTCertData',
+		array(
+			'certificate' => $certificate,
+			'seller_name' => SST_Settings::get( 'company_name' ),
+			'images'      => array(
+				'single_cert'  => SST()->url( 'assets/img/sp_exemption_certificate750x600.png' ),
+				'blanket_cert' => SST()->url( 'assets/img/exemption_certificate750x600.png' ),
+			),
+		)
+	);
+
+	require __DIR__ . '/views/html-meta-box.php';
+	require __DIR__ . '/frontend/views/html-view-certificate.php';
+}
+
+add_action( 'sst_output_tax_meta_box', 'sst_render_tax_meta_box' );

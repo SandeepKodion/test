@@ -253,6 +253,8 @@ abstract class SST_Abstract_Cart {
 	 * Split package into one or more subpackages, one for each product
 	 * origin address.
 	 *
+	 * @todo This method is doing too much and should be split into smaller methods.
+	 *
 	 * @param array $package Package.
 	 *
 	 * @return array Subpackages (empty on error).
@@ -261,7 +263,7 @@ abstract class SST_Abstract_Cart {
 	protected function split_package( $package ) {
 		$packages = array();
 
-		/* Convert destination address to Address object */
+		// Convert destination address to Address object.
 		try {
 			$destination = new TaxCloud\Address(
 				isset( $package['destination']['address_1'] ) ? $package['destination']['address_1'] : $package['destination']['address'],
@@ -276,7 +278,18 @@ abstract class SST_Abstract_Cart {
 			return array();
 		}
 
-		/* Split package into subpackages */
+		// If the 'origin' key is already set, we can assume that some upstream
+		// code (e.g. a marketplace integration) already split the packages by
+		// origin address. In this case, we just make sure all required keys are
+		// set and return the package as-is.
+		if ( isset( $package['origin'] ) && $package['origin'] instanceof SST_Origin_Address ) {
+			$origin_id              = $package['origin']->getID();
+			$packages[ $origin_id ] = $this->format_package( $package );
+
+			return $packages;
+		}
+
+		// Split package into subpackages.
 		foreach ( $package['contents'] as $cart_key => $item ) {
 			$origin = $this->get_origin_for_product( $item, $package['destination'] );
 
@@ -294,31 +307,62 @@ abstract class SST_Abstract_Cart {
 
 			$origin_id = $origin->getID();
 
-			/* Create subpackage for origin if need be */
+			// Create subpackage for origin if need be and associate any
+			// shipping charges with the first subpackage.
 			if ( ! array_key_exists( $origin_id, $packages ) ) {
-				$packages[ $origin_id ] = sst_create_package(
-					array(
-						'origin'      => SST_Addresses::to_address( $origin ),
-						'destination' => $package['destination'],
-						'certificate' => $this->get_certificate(),
-						'user'        => isset( $package['user'] ) ? $package['user'] : array(
-							'ID' => get_current_user_id(),
-						),
-					)
+				$subpackage = array(
+					'origin'      => $origin,
+					'destination' => $package['destination'],
 				);
 
-				/* Associate shipping with first subpackage */
 				if ( isset( $package['shipping'] ) ) {
-					$packages[ $origin_id ]['shipping'] = $package['shipping'];
+					$subpackage['shipping'] = $package['shipping'];
 					unset( $package['shipping'] );
 				}
+
+				$packages[ $origin_id ] = $this->format_package( $subpackage );
 			}
 
-			/* Update package contents */
+			// Add item to package.
 			$packages[ $origin_id ]['contents'][ $cart_key ] = $item;
 		}
 
-		return $packages;
+		return array_values( $packages );
+	}
+
+	/**
+	 * Formats a SST cart package, ensuring that all required fields are set
+	 * and have the correct type.
+	 *
+	 * @param array $package Cart package.
+	 *
+	 * @return array
+	 */
+	protected function format_package( $package ) {
+		if ( ! isset( $package['origin'] ) ) {
+			$package['origin'] = SST_Addresses::get_default_address();
+		}
+
+		$package['origin'] = SST_Addresses::to_address( $package['origin'] );
+
+		if ( ! ( $package['origin'] instanceof SST_Origin_Address ) ) {
+			SST_Logger::add(
+				__( 'Origin address for shipping package is invalid. Using default origin address from Simple Sales Tax settings.', 'simple-sales-tax' )
+			);
+			$package['origin'] = SST_Addresses::to_address(
+				SST_Addresses::get_default_address()
+			);
+		}
+
+		if ( ! isset( $package['certificate'] ) ) {
+			$package['certificate'] = $this->get_certificate();
+		}
+
+		if ( ! isset( $package['user'] ) ) {
+			$package['user'] = array( 'ID' => get_current_user_id() );
+		}
+
+		return sst_create_package( $package );
 	}
 
 	/**
@@ -394,30 +438,33 @@ abstract class SST_Abstract_Cart {
 	 * @since 5.0
 	 */
 	protected function ready_for_lookup( $package ) {
-		return isset( $package['destination'] ) && SST_Addresses::is_valid( $package['destination'] );
+		$dest_valid   = isset( $package['destination'] ) && SST_Addresses::is_valid( $package['destination'] );
+		$origin_valid = isset( $package['origin'] ) && $package['origin'] instanceof TaxCloud\Address;
+
+		return $origin_valid && $dest_valid;
 	}
 
 	/**
-	 * Get the base packages for the cart, filtering out all packages destined
-	 * for places abroad.
+	 * Checks whether a cart package has a valid destination for TaxCloud
+	 * lookup requests.
 	 *
-	 * @return array
-	 * @since 5.5
+	 * @param array $package Cart package.
+	 *
+	 * @return bool True if cart package destination is valid, else false.
+	 * @since 6.2.2
 	 */
-	protected function get_filtered_packages() {
-		$packages = $this->get_base_packages();
+	public function is_package_destination_valid( $package ) {
+		$valid = true;
 
-		foreach ( $packages as $key => $package ) {
-			if ( ! isset( $package['destination'], $package['destination']['country'] ) ) {
-				unset( $packages[ $key ] );
-			} else {
-				if ( 'US' !== $package['destination']['country'] ) {
-					unset( $packages[ $key ] );
-				}
+		if ( ! isset( $package['destination'], $package['destination']['country'] ) ) {
+			$valid = false;
+		} else {
+			if ( 'US' !== $package['destination']['country'] ) {
+				$valid = false;
 			}
 		}
 
-		return $packages;
+		return apply_filters( 'sst_is_package_destination_valid', $valid, $package );
 	}
 
 	/**
